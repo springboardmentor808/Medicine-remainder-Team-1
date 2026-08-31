@@ -9,7 +9,7 @@ import { todayISO, uid } from "@/utils/helpers";
 interface MedicineContextValue {
   medicines: Medicine[];
   isLoading: boolean;
-  addMedicine: (payload: Partial<Medicine>) => Medicine;
+  addMedicine: (payload: Partial<Medicine>) => Promise<Medicine>;
   updateMedicine: (id: string, payload: Partial<Medicine>) => void;
   softDeleteMedicine: (id: string) => void;
   restoreMedicine: (id: string) => void;
@@ -32,25 +32,37 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
     if (data) setMedicines(data);
   }, [data]);
 
-  const addMedicine = (payload: Partial<Medicine>) => {
-    const med = makeMedicine({
+  // Local (mock-data) fallback id/timestamp — only used when there's no
+  // real backend configured, so the app still works offline/pre-API.
+  const draftMedicine = (payload: Partial<Medicine>) =>
+    makeMedicine({
       ...payload,
       id: uid(),
       status: "active",
       createdAt: todayISO(),
       deleted: false,
     });
-    setMedicines((prev) => [med, ...prev]);
-    medicineService.create(med).catch(() => {
-      /* mocked — no-op */
-    });
-    return med;
+
+  const addMedicine = async (payload: Partial<Medicine>): Promise<Medicine> => {
+    try {
+      // Ask the backend to create the record first, so the medicine that
+      // lands in state (and thus in Medicine List/Details) has the real
+      // server-assigned id and is actually persisted — not just an
+      // optimistic local guess.
+      const created = await medicineService.create(payload);
+      const med = created?.id ? created : draftMedicine(payload);
+      setMedicines((prev) => [med, ...prev]);
+      return med;
+    } catch (err) {
+      notifyError("Couldn't add medicine", "Please check the details and try again.");
+      throw err;
+    }
   };
 
   const updateMedicine = (id: string, payload: Partial<Medicine>) => {
     setMedicines((prev) => prev.map((m) => (m.id === id ? { ...m, ...payload } : m)));
     medicineService.update(id, payload).catch(() => {
-      /* mocked — no-op */
+      notifyError("Couldn't save changes", "The update may not have been saved to the server.");
     });
   };
 
@@ -59,7 +71,7 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
       prev.map((m) => (m.id === id ? { ...m, deleted: true, deletedAt: todayISO() } : m))
     );
     medicineService.softDelete(id).catch(() => {
-      /* mocked — no-op */
+      notifyError("Couldn't delete medicine", "The change may not have been saved to the server.");
     });
   };
 

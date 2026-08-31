@@ -28,6 +28,7 @@ export default function AddMedicine() {
   const { medicines, addMedicine } = useMedicines();
   const [step, setStep] = useState(0);
   const [uploaded, setUploaded] = useState({ prescription: false, image: false });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
     register,
@@ -71,18 +72,27 @@ export default function AddMedicine() {
   };
   const back = () => setStep((s) => Math.max(0, s - 1));
 
-  const onSubmit = (data: MedicineFormValues) => {
-    const remaining = data.remaining && data.remaining > 0 ? data.remaining : data.quantity;
-    const med = addMedicine({
-      ...data,
-      remaining,
-      sideEffects: ["Consult doctor for full list"],
-      description: `${data.name} for ${data.disease || "your prescribed condition"}.`,
-      usage: `Take ${data.foodTiming.toLowerCase()}.`,
-      trend: [data.quantity, data.quantity, data.quantity, data.quantity, data.quantity, data.quantity, remaining],
-    });
-    notifySuccess("Medicine added", `${med.name} was saved to your medicine list.`);
-    navigate("/medicines");
+  const onSubmit = async (data: MedicineFormValues) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const remaining = data.remaining && data.remaining > 0 ? data.remaining : data.quantity;
+      const med = await addMedicine({
+        ...data,
+        remaining,
+        sideEffects: ["Consult doctor for full list"],
+        description: `${data.name} for ${data.disease || "your prescribed condition"}.`,
+        usage: `Take ${data.foodTiming.toLowerCase()}.`,
+        trend: [data.quantity, data.quantity, data.quantity, data.quantity, data.quantity, data.quantity, remaining],
+      });
+      notifySuccess("Medicine added", `${med.name} was saved to your medicine list.`);
+      navigate("/medicines");
+    } catch {
+      // addMedicine already shows an error toast — keep the user on this
+      // step (with their data intact) so they can retry.
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const err = (key: keyof MedicineFormValues) => errors[key]?.message as string | undefined;
@@ -291,8 +301,8 @@ export default function AddMedicine() {
                 Continue
               </PrimaryButton>
             ) : (
-              <PrimaryButton type="submit" icon={Save}>
-                Save medicine
+              <PrimaryButton type="submit" icon={Save} disabled={isSubmitting}>
+                {isSubmitting ? "Saving…" : "Save medicine"}
               </PrimaryButton>
             )}
           </div>
